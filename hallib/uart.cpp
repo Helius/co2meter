@@ -5,17 +5,17 @@
 #include "uart.h"
 
 #ifndef UART_BAUDRATE
-#pragma error "uart UART_BAUDRATE was not set!!"
+#pragma error " uart UART_BAUDRATE was not set!!"
 #else
 #define XSTR(x) STR(x)
 #define STR(x) #x
-#pragma message("Use uart baudrate "XSTR(UART_BAUDRATE))
+#pragma message( "Use uart baudrate " XSTR(UART_BAUDRATE))
 #endif
 
 
 #if defined UART_DOUBLE_SPEED
 #define UART_DIVIDER 8UL
-#pragma message("Use uart double speed mode ")
+#pragma message( " Use uart double speed mode ")
 #else
 #define UART_DIVIDER 16UL
 #endif
@@ -60,11 +60,11 @@ ISR(USART_RX_vect)
 		(*receiver_handler)(UDR0);
 	}
 }
-
+/*
 FILE uart_output = FDEV_SETUP_STREAM(uart_putchar, NULL, _FDEV_SETUP_WRITE);
 FILE uart_input = FDEV_SETUP_STREAM(NULL, uart_getchar, _FDEV_SETUP_READ);
 FILE uart_io = FDEV_SETUP_STREAM(uart_putchar, uart_getchar, _FDEV_SETUP_RW);
-
+*/
 void uart_init(void) {
 #if defined __AVR_ATmega328P__ || defined __AVR_ATmega168__
 	UBRR0H = (uint8_t)(BAUD_PRESCALLER>>8);
@@ -86,7 +86,7 @@ void uart_init(void) {
 #pragma error "can't find configuration for this MC"
 #endif
 
-	stdout = &uart_output;
-	stdin  = &uart_input;
+//	stdout = fdevopen(uart_putchar, NULL);
+//	stdin  = fdevopen(NULL, uart_getchar);
 }
 

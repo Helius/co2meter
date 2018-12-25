@@ -27,7 +27,7 @@ set(AVR_UPLOADTOOL_OPTIONS -b19200)
 ##########################################################################
 # AVR and fuses needs to be set
 ##########################################################################
-set(AVR_MCU atmega328p)
+set(AVR_MCU atmega168)
 #set(AVR_H_FUSE 0xd9)
 #set(AVR_L_FUSE 0xc3)
 
@@ -122,28 +122,28 @@ endif(CMAKE_BUILD_TYPE MATCHES Debug)
 # compiler options for all build types
 ##########################################################################
 add_definitions("-DF_CPU=${MCU_SPEED}")
-add_definitions("-fpack-struct")
-add_definitions("-fshort-enums")
 add_definitions("-Wall")
 add_definitions("-Werror")
 add_definitions("-pedantic")
 add_definitions("-pedantic-errors")
-add_definitions("-funsigned-char")
-add_definitions("-funsigned-bitfields")
-add_definitions("-ffunction-sections")
-add_definitions("-c")
-add_definitions("-std=gnu99")
+#add_definitions("-funsigned-char")
+#add_definitions("-funsigned-bitfields")
+#add_definitions("-ffunction-sections")
+#add_definitions("-c")
+add_definitions("-std=c++14")
 
 ##########################################################################
 # include search paths
 ##########################################################################
 include_directories(app)
 include_directories(hallib)
+include_directories(ssd1306)
 
 ##########################################################################
 # building library and application in their subdirectories
 ##########################################################################
 add_subdirectory(hallib)
+add_subdirectory(ssd1306)
 add_subdirectory(app)
 
 ##########################################################################
