@@ -253,7 +253,7 @@ public:
 		return min;
 	}
 
-	uint8_t getLast(int row, uint8_t offset)
+	uint8_t getLast(int row, int8_t offset)
 	{
 		uint16_t ind = cur+offset;
 		return data[ind % width][row];
@@ -289,8 +289,9 @@ public:
 		constexpr uint8_t pages = 7;
 		uint8_t pb[pages];
 		memset(pb, 0, pages);
+		int needDraw = 0;
 
-		for(int r = 0; r < 3; ++r) {
+		for(int r = 0; r < 1; ++r) {
 			if((r == 1) && (ind & 1)) {
 				continue;
 			}
@@ -302,10 +303,17 @@ public:
 				if(min>0) {
 					min--;
 				}
-
 			}
+
+			//if (max-min < pages*8) {
+			//	max = pages*8;
+			//	min = 0;
+			//}
+
 			uint8_t val = arr.getLast(r, ind);
 			uint16_t pt = ((val - min) * (pages*8-1))/(max-min);
+			needDraw |= val;
+
 
 
 			for(uint8_t i = 0; i < pages; ++i) {
@@ -317,8 +325,10 @@ public:
 			}
 		}
 
-		for(int i = 0; i < pages; ++i) {
-			oled.drawPage(pb + i, 1 + i, ind, 1);
+		if(needDraw) {
+			for(int i = 0; i < pages; ++i) {
+				oled.drawPage(pb + i, 1 + i, ind, 1);
+			}
 		}
 	}
 
@@ -332,6 +342,76 @@ class IScreen {
 	public:
 		virtual void draw() = 0;
 };
+
+class Mhz19Sensor {
+
+public:
+
+	uint16_t getValue() {
+		sendCommand();
+		_delay_ms(5);
+		return readValue();
+	}
+
+	static constexpr int len = 9;
+	uint8_t data[len];
+
+private:
+
+	void sendCommand() {
+		uart_putchar(static_cast<char>(0xFF));
+		uart_putchar(static_cast<char>(0x01));
+		uart_putchar(static_cast<char>(0x86));
+
+		uart_putchar(static_cast<char>(0x00));
+		uart_putchar(static_cast<char>(0x00));
+		uart_putchar(static_cast<char>(0x00));
+		uart_putchar(static_cast<char>(0x00));
+		uart_putchar(static_cast<char>(0x00));
+
+		uart_putchar(static_cast<char>(0x79));
+	}
+
+	uint16_t readValue() {
+		memset(data, 0, len);
+		for(int i = 0; i < len; ++i) {
+			data[i] = uart_getchar();
+		}
+		/*
+		if(calcCRC(data) == data[8]) {
+			//value <<= 8;
+			//value |= data[3];
+			return value/10;
+		} else {
+			return 0;
+		}*/
+			uint16_t h = data[2];
+			uint16_t l = data[3];
+			value = h*256 + l;
+		return value;
+	}
+	
+	uint8_t calcCRC(uint8_t * data)
+	{
+		uint8_t crc = 0;
+		for (int i = 1; i < len-1; ++i)
+		{
+			crc += data[i];
+		}
+		crc = 0xFF - crc;
+		crc++;
+
+		return crc;
+	}
+
+private:
+	uint16_t value = 13;
+};
+
+
+uint16_t co2Value = 0;
+
+Mhz19Sensor co2;
 
 class MainScreen
 	: public IScreen
@@ -349,10 +429,10 @@ class MainScreen
 		}
 
 		void draw() override {
-				str0.setNumber(740, 14);
-				str1.setNumber(420, 13);
-				str2.setNumber(-32, 12);
-				str3.setNumber(79, 11);
+				str0.setNumber(co2Value, 14);
+				str1.setNumber(1, 13);
+				str2.setNumber(co2.data[2], 12);
+				str3.setNumber(co2.data[3], 11);
 		};
 	private:
 		NumberPrinter pSmall;
@@ -370,7 +450,8 @@ class ChartScreen
 {
 public:
 	ChartScreen(SSD1306 & oled, DataArray & arr) 
-		: pSmall(NumberPrinter(oled, 4, 1))
+		: arr(arr)
+		,	pSmall(NumberPrinter(oled, 4, 1))
 		, str0(NumberStr(pSmall, pSmall, 0, 0, 32))
 		, str1(NumberStr(pSmall, pSmall, 32, 0, 32))
 		, str2(NumberStr(pSmall, pSmall, 64, 0, 32))
@@ -379,13 +460,14 @@ public:
 	{
 	}
 	void draw() override {
-		str0.setNumber(-12, 12);
-		str1.setNumber(79, 11);
-		str2.setNumber(740, 14);
-		str3.setNumber(410, 13);
+		str0.setNumber(arr.getLast(0, -1)*10, 14);
+		str1.setNumber(arr.getLast(1, -1), 11);
+		str2.setNumber(arr.getLast(2, -1), 12);
+		str3.setNumber(arr.getLast(0, -1), 13);
 		chart.draw();
 	};
 private:
+		DataArray & arr;
 		NumberPrinter pSmall;
 		NumberStr str0;
 		NumberStr str1;
@@ -417,6 +499,7 @@ void uart_rx_handler(unsigned char ch)
 	toggleLed();
 }
 
+
 int main(void)
 {
 	int screenIndex = 1;
@@ -427,30 +510,29 @@ int main(void)
 	screens[1] = static_cast<IScreen*>(&chartScreen);
 
 	toggleLed();
-	_delay_ms(100);
+	_delay_ms(1000);
 	PORTB = 0;
 
+	uart_init();
 	oled.init();
 	oled.clear();
 
 	_delay_ms(100);
-
-	for(int i = 0; i < 128; ++i) {
-		double rad = (i*10.0)/128;
-		double v = 100 + 100 * sin(rad);
-		double v1 = 100 + 100 * cos(rad*0.4);
-		arr.addValue(v, i, v1);
-	}
-
 	
 	while(1) {
 		
 		oled.clear();
-		screens[(++screenIndex)%2]->draw();
-		//screens[(screenIndex)%2]->draw();
+		screenIndex++;
+		screenIndex %= 2;
+		screens[screenIndex]->draw();
 
 		PORTB ^= (1 << PIN5);
-		_delay_ms(4000);
+		_delay_ms(500);
+
+		if(screenIndex != 0) {
+			co2Value = co2.getValue();
+			arr.addValue(co2Value/10, 1, 1);
+		}
 	}
 }
 

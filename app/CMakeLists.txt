@@ -17,5 +17,5 @@ add_avr_executable(
 find_library(C_LIB c)
 message(STATUS "avr-libc: ${C_LIB}")
 
-avr_target_link_libraries(co2meter hallib ssd1306 ${C_LIB})
+avr_target_link_libraries(co2meter hallib ssd1306 mhz19 ${C_LIB})
 

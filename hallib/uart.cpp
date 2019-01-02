@@ -22,7 +22,7 @@
 
 #define BAUD_PRESCALLER (((F_CPU / (UART_BAUDRATE * UART_DIVIDER))) - 1)
 
-int uart_putchar(char c, FILE *stream) {
+int uart_putchar(char c, FILE *) {
 #if defined __AVR_ATmega328P__ || defined __AVR_ATmega168__
 	while(!(UCSR0A & (1<<UDRE0)));
 	UDR0 = c;
