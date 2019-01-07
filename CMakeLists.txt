@@ -137,6 +137,7 @@ add_definitions("-std=c++14")
 ##########################################################################
 include_directories(app)
 include_directories(hallib)
+include_directories(dht22)
 include_directories(ssd1306)
 include_directories(mhz19)
 
@@ -144,6 +145,7 @@ include_directories(mhz19)
 # building library and application in their subdirectories
 ##########################################################################
 add_subdirectory(hallib)
+add_subdirectory(dht22)
 add_subdirectory(ssd1306)
 add_subdirectory(mhz19)
 add_subdirectory(app)

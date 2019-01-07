@@ -10,6 +10,8 @@
 #include <uart.h>
 #include <SSD1306.h>
 
+#include <DHT22_AM2302_v3.h>
+
 
 class SSegmentRender {
 
@@ -246,11 +248,11 @@ public:
 	{
 		uint8_t min = 0xFF;
 		for(int i = 0; i < 128; ++i) {
-			if(data[i][row] < min) {
+			if(data[i][row] != 0 && data[i][row] < min) {
 				min = data[i][row];
 			}
 		}
-		return min;
+		return min == 0xFF ? 0 : min;
 	}
 
 	uint8_t getLast(int row, int8_t offset)
@@ -286,7 +288,7 @@ public:
 
 	void drawColumn(uint8_t ind)
 	{
-		constexpr uint8_t pages = 7;
+		constexpr uint8_t pages = 2;
 		uint8_t pb[pages];
 		memset(pb, 0, pages);
 		int needDraw = 0;
@@ -298,17 +300,15 @@ public:
 
 			uint8_t max = arr.getMax(r);
 			uint8_t min = arr.getMin(r);
-			if(max == min) {
+			/*if(max == min) {
 				max++;
 				if(min>0) {
 					min--;
 				}
+			}*/
+			if(max-min < 10) {
+				max+=100;
 			}
-
-			//if (max-min < pages*8) {
-			//	max = pages*8;
-			//	min = 0;
-			//}
 
 			uint8_t val = arr.getLast(r, ind);
 			uint16_t pt = ((val - min) * (pages*8-1))/(max-min);
@@ -410,6 +410,8 @@ private:
 
 
 uint16_t co2Value = 0;
+uint16_t temperature = 0;
+uint16_t humidity = 0;
 
 Mhz19Sensor co2;
 
@@ -431,8 +433,8 @@ class MainScreen
 		void draw() override {
 				str0.setNumber(co2Value, 14);
 				str1.setNumber(1, 13);
-				str2.setNumber(co2.data[2], 12);
-				str3.setNumber(co2.data[3], 11);
+				str2.setNumber(temperature-50, 12);
+				str3.setNumber(humidity, 11);
 		};
 	private:
 		NumberPrinter pSmall;
@@ -461,8 +463,8 @@ public:
 	}
 	void draw() override {
 		str0.setNumber(arr.getLast(0, -1)*10, 14);
-		str1.setNumber(arr.getLast(1, -1), 11);
-		str2.setNumber(arr.getLast(2, -1), 12);
+		str1.setNumber(arr.getLast(1, -1), 12);
+		str2.setNumber(arr.getLast(2, -1), 11);
 		str3.setNumber(arr.getLast(0, -1), 13);
 		chart.draw();
 	};
@@ -476,8 +478,7 @@ private:
 		ChartWidget chart;
 };
 
-
-
+DHT22 dht(&DDRD, &PORTD, &PIND, 5);
 
 SSD1306 oled;
 DataArray arr;
@@ -496,43 +497,59 @@ void toggleLed(void)
 
 void uart_rx_handler(unsigned char ch)
 {
-	toggleLed();
+	//toggleLed();
 }
 
+constexpr int PIN_MHZ_Enable = 7;
+constexpr int PIN_DHT_PullUp = 6;
+constexpr int PIN_DHT_Data = 5;
 
 int main(void)
 {
 	int screenIndex = 1;
-	int cnt = 0;
-	cnt++;
+	uint16_t cnt = 0;
 
 	screens[0] = static_cast<IScreen*>(&mainScreen);
 	screens[1] = static_cast<IScreen*>(&chartScreen);
 
-	toggleLed();
-	_delay_ms(1000);
-	PORTB = 0;
+	DDRD = (1 << PIN_MHZ_Enable) | (1 << PIN_DHT_PullUp);
+	// enable mhz and pullup for dht
+	PORTD = (1 << PIN_MHZ_Enable) | (1 << PIN_DHT_PullUp);
+
+	//toggleLed();
+	_delay_ms(500);
+	PORTB = 1 << 5; // led
+	PORTB = 0; // light led
+
 
 	uart_init();
 	oled.init();
 	oled.clear();
-
+	PORTD = 1<<7;
 	_delay_ms(100);
 	
 	while(1) {
 		
+		cnt++;
+
+		if(dht.readData() != -1) {
+			temperature = static_cast<int16_t>(dht.gettemperatureC()) + 50;
+			humidity = static_cast<uint16_t>(dht.gethumidity());
+		}
+
+		PORTB ^= ~(1 << PIN5);
+		_delay_ms(3000);
+		co2Value = co2.getValue();
+
+		if(cnt == 200) {
+			arr.addValue(co2Value/10, temperature-50, humidity);
+			cnt = 0;
+		}
+
 		oled.clear();
 		screenIndex++;
 		screenIndex %= 2;
 		screens[screenIndex]->draw();
-
-		PORTB ^= (1 << PIN5);
-		_delay_ms(500);
-
-		if(screenIndex != 0) {
-			co2Value = co2.getValue();
-			arr.addValue(co2Value/10, 1, 1);
-		}
 	}
 }
 
