@@ -482,74 +482,169 @@ DHT22 dht(&DDRD, &PORTD, &PIND, 5);
 
 SSD1306 oled;
 DataArray arr;
-
-IScreen * screens[2];
+constexpr int screenCnt = 2;
+IScreen * screens[screenCnt];
 MainScreen mainScreen(oled);
 ChartScreen chartScreen(oled, arr);
 
 
-void toggleLed(void)
-{
-	// toggle pin
-	PORTB ^= (1 << PIN5);
-}
-
 
 void uart_rx_handler(unsigned char ch)
 {
-	//toggleLed();
 }
+
+class OutPin {
+public:
+	OutPin() = delete;
+	OutPin(volatile uint8_t * ddr, volatile uint8_t * port, int pin)
+		: port(port)
+	{
+		pinM = 1 << pin;
+		*ddr |= pinM;
+	}
+	void set()
+	{
+		*port |= pinM;
+	}
+	void clear()
+	{
+		*port &= ~pinM; 
+	}
+private:
+	volatile uint8_t * port;
+	int pinM;
+};
+
+enum InputCommand {
+	None = 0,
+	Left,
+	Right,
+	Push,
+};
+
+
+OutPin led(&DDRB, &PORTB, 5);
+int cmd = 0;
 
 constexpr int PIN_MHZ_Enable = 7;
 constexpr int PIN_DHT_PullUp = 6;
 constexpr int PIN_DHT_Data = 5;
 
+uint8_t screenIndex = 0;
+
+//Interrupt Service Routine for INT0
+// Button
+ISR(INT0_vect)
+{
+	/*
+	cmd = 1;
+	led.set();
+	led.clear();
+	*/
+	_delay_ms(5);
+	screenIndex++;
+}
+
+//Interrupt Service Routine for INT0
+// Encoder
+ISR(INT1_vect)
+{
+	/*
+	led.set();
+	if(PIND & (1 << PIN4)) {
+		//Left
+		cmd = 2;
+	} else {
+		//Right
+		cmd = 3;
+	}
+	_delay_ms(10);
+	led.clear();
+	*/
+}
+
 int main(void)
 {
-	int screenIndex = 1;
-	uint16_t cnt = 0;
-
 	screens[0] = static_cast<IScreen*>(&mainScreen);
 	screens[1] = static_cast<IScreen*>(&chartScreen);
+	
+	led.set();
 
 	DDRD = (1 << PIN_MHZ_Enable) | (1 << PIN_DHT_PullUp);
 	// enable mhz and pullup for dht
-	PORTD = (1 << PIN_MHZ_Enable) | (1 << PIN_DHT_PullUp);
+	PORTD |= (1 << PIN_MHZ_Enable) | (1 << PIN_DHT_PullUp);
+	PORTD |= (1 << PIN2) | (1 << PIN3) | (1 << PIN4); // enable pullup on exint and encoder
+	//DDRD &= ~(1 << 2);
+	//PORTD |= (1 << 2);
 
-	//toggleLed();
-	_delay_ms(500);
-	PORTB = 1 << 5; // led
-	PORTB = 0; // light led
-
-
-	uart_init();
-	oled.init();
-	oled.clear();
-	PORTD = 1<<7;
+	// setup external interrupt
+	EICRA = (1 << ISC01) | (1 << ISC11); // Trigger on failing edge
+	EIMSK = (1 << INT0) | (1 << INT1);    // Enable INT0
+ 
 	_delay_ms(100);
+	led.clear();
+	sei();				//Enable Global Interrupt
 	
+	uart_init(0);
+	oled.init();
+	
+	uint16_t logDelay = 0;
+	uint16_t getValuesDelay = 0;
+	uint16_t updateScreenDelay = 0;
+	int updateScreen = 1;
+	
+	_delay_ms(100);
+
 	while(1) {
 		
-		cnt++;
+		_delay_ms(10);
 
-		if(dht.readData() != -1) {
-			temperature = static_cast<int16_t>(dht.gettemperatureC()) + 50;
-			humidity = static_cast<uint16_t>(dht.gethumidity());
+		//if(cmd == 1) {
+		//	cmd = 0;
+	//	}
+	/*
+		asm volatile(
+			"nop\n\t"
+			"nop\n\t"
+			"nop\n\t"
+			"nop\n\t"
+			"nop\n\t"
+			"nop\n\t"
+		::);
+		*/
+
+		updateScreenDelay++;
+		if(updateScreenDelay > 100*6) {
+			updateScreenDelay = 0;
+			updateScreen = 1;
 		}
 
-		PORTB ^= ~(1 << PIN5);
-		_delay_ms(3000);
-		co2Value = co2.getValue();
 
-		if(cnt == 200) {
+		getValuesDelay++;
+		if(getValuesDelay > 100*6) {
+			getValuesDelay = 0;
+			if(dht.readData() != -1) {
+				temperature = static_cast<int16_t>(dht.gettemperatureC()) + 50;
+				humidity = static_cast<uint16_t>(dht.gethumidity());
+			} else {
+				temperature = 0;
+				humidity = 0;
+			}
+			co2Value = co2.getValue();
+		}
+		
+		if(updateScreen) {
+			updateScreen = 0;
+			oled.clear();
+			screens[screenIndex % screenCnt]->draw();
+		}
+		
+		logDelay++;
+		if(logDelay > 100*60) // 1 min
+		{
+			logDelay = 0;
 			arr.addValue(co2Value/10, temperature-50, humidity);
-			cnt = 0;
 		}
-
-		oled.clear();
-		screenIndex++;
-		screenIndex %= 2;
-		screens[screenIndex]->draw();
 	}
 }
 
