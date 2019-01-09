@@ -227,16 +227,17 @@ public:
 
 	void addValue(uint8_t v0, uint8_t v1, uint8_t v2)
 	{
-		data[cur % width][0] = v0;
-		data[cur % width][1] = v1;
-		data[cur % width][2] = v2;
+		uint8_t index = cur % width;
+		data[index][0] = v0;
+		data[index][1] = v1;
+		data[index][2] = v2;
 		++cur;
 	}
 
 	uint8_t getMax(int row)
 	{
 		uint8_t max = 0;
-		for(int i = 0; i < 128; ++i) {
+		for(int i = 0; i < width; ++i) {
 			if(data[i][row] > max) {
 				max = data[i][row];
 			}
@@ -247,7 +248,7 @@ public:
 	uint8_t getMin(int row)
 	{
 		uint8_t min = 0xFF;
-		for(int i = 0; i < 128; ++i) {
+		for(int i = 0; i < width; ++i) {
 			if(data[i][row] != 0 && data[i][row] < min) {
 				min = data[i][row];
 			}
@@ -290,13 +291,10 @@ public:
 	{
 		constexpr uint8_t pages = 2;
 		uint8_t pb[pages];
-		memset(pb, 0, pages);
 		int needDraw = 0;
 
-		for(int r = 0; r < 1; ++r) {
-			if((r == 1) && (ind & 1)) {
-				continue;
-			}
+		for(int r = 0; r < 3; ++r) {
+			memset(pb, 0, pages);
 
 			uint8_t max = arr.getMax(r);
 			uint8_t min = arr.getMin(r);
@@ -323,12 +321,12 @@ public:
 					pb[pages - i - 1] |= pattern;
 				}
 			}
-		}
 
 		if(needDraw) {
 			for(int i = 0; i < pages; ++i) {
-				oled.drawPage(pb + i, 1 + i, ind, 1);
+				oled.drawPage(pb + i, 1 + i + r*pages, ind, 1);
 			}
+		}
 		}
 	}
 
@@ -410,8 +408,8 @@ private:
 
 
 uint16_t co2Value = 0;
-uint16_t temperature = 0;
-uint16_t humidity = 0;
+int8_t temperature = 0;
+uint8_t humidity = 0;
 
 Mhz19Sensor co2;
 
@@ -479,8 +477,8 @@ private:
 };
 
 DHT22 dht(&DDRD, &PORTD, &PIND, 5);
-
 SSD1306 oled;
+
 DataArray arr;
 constexpr int screenCnt = 2;
 IScreen * screens[screenCnt];
@@ -488,10 +486,6 @@ MainScreen mainScreen(oled);
 ChartScreen chartScreen(oled, arr);
 
 
-
-void uart_rx_handler(unsigned char ch)
-{
-}
 
 class OutPin {
 public:
@@ -581,7 +575,6 @@ int main(void)
 	EICRA = (1 << ISC01) | (1 << ISC11); // Trigger on failing edge
 	EIMSK = (1 << INT0) | (1 << INT1);    // Enable INT0
  
-	_delay_ms(100);
 	led.clear();
 	sei();				//Enable Global Interrupt
 	
@@ -589,15 +582,9 @@ int main(void)
 	oled.init();
 	
 	uint16_t logDelay = 0;
-	uint16_t getValuesDelay = 0;
-	uint16_t updateScreenDelay = 0;
-	int updateScreen = 1;
-	
-	_delay_ms(100);
 
 	while(1) {
 		
-		_delay_ms(10);
 
 		//if(cmd == 1) {
 		//	cmd = 0;
@@ -613,38 +600,27 @@ int main(void)
 		::);
 		*/
 
-		updateScreenDelay++;
-		if(updateScreenDelay > 100*6) {
-			updateScreenDelay = 0;
-			updateScreen = 1;
+		if(dht.readData() != -1) {
+			temperature = dht.gettemperatureC() + 50;
+			humidity = dht.gethumidity();
+		} else {
+			temperature = 0;
+			humidity = 0;
 		}
+		co2Value = co2.getValue();
 
 
-		getValuesDelay++;
-		if(getValuesDelay > 100*6) {
-			getValuesDelay = 0;
-			if(dht.readData() != -1) {
-				temperature = static_cast<int16_t>(dht.gettemperatureC()) + 50;
-				humidity = static_cast<uint16_t>(dht.gethumidity());
-			} else {
-				temperature = 0;
-				humidity = 0;
-			}
-			co2Value = co2.getValue();
-		}
-		
-		if(updateScreen) {
-			updateScreen = 0;
-			oled.clear();
-			screens[screenIndex % screenCnt]->draw();
-		}
-		
 		logDelay++;
-		if(logDelay > 100*60) // 1 min
+		if(logDelay > 10*6)
 		{
 			logDelay = 0;
 			arr.addValue(co2Value/10, temperature-50, humidity);
 		}
+		oled.clear();
+		screens[screenIndex % screenCnt]->draw();
+		
+		_delay_ms(6100);
+
 	}
 }
 
