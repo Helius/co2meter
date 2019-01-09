@@ -298,14 +298,11 @@ public:
 
 			uint8_t max = arr.getMax(r);
 			uint8_t min = arr.getMin(r);
-			/*if(max == min) {
+			if(max == min) {
 				max++;
 				if(min>0) {
 					min--;
 				}
-			}*/
-			if(max-min < 10) {
-				max+=100;
 			}
 
 			uint8_t val = arr.getLast(r, ind);
@@ -322,11 +319,11 @@ public:
 				}
 			}
 
-		if(needDraw) {
-			for(int i = 0; i < pages; ++i) {
-				oled.drawPage(pb + i, 1 + i + r*pages, ind, 1);
+			if(needDraw) {
+				for(int i = 0; i < pages; ++i) {
+					oled.drawPage(pb + i, 1 + i + r*pages, ind, 1);
+				}
 			}
-		}
 		}
 	}
 
