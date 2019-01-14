@@ -154,13 +154,19 @@ class NumberPrinter {
 		~NumberPrinter() {
 			free(buf);
 		}
+
+		void clear(uint8_t x, uint8_t startPage, uint8_t w) {
+			for (int i = 0; i < pages; ++i) {
+				oled.clearPage(startPage + i, x, w);
+			}
+		}
+
 		int print(int s, int offset, int startPage) {
 			memset(buf, 0, width*pages);
 			int glyphWidth = render.draw(s, width, pages, buf);
 			for (int i = 0; i < pages; ++i) {
 				oled.drawPage(buf + i * width, startPage + i, offset, glyphWidth);
 			}
-
 			return glyphWidth;
 		}
 		uint8_t width;
@@ -178,22 +184,32 @@ class NumberStr {
 		NumberStr(NumberPrinter & p, NumberPrinter & l, uint8_t x, uint8_t topPage, uint8_t width)
 			: printer(p), label(l), x(x), topPage(topPage), width(width)
 		{}
-			
+
 			void setNumber(int16_t value, uint8_t lblChar) 
 			{
-				constexpr int len = 9;
-				uint8_t str[len];
-				uint8_t x_offset = 0;
-				
-				sprintf((char*)str, "%d", value);
+				printer.clear(x, topPage, width);
 
-				for(int i = 0; i < len; ++i) {
+				constexpr int len = 7;
+				uint8_t str[len] = {0, };
+				uint8_t x_offset = 0;
+				uint8_t sign = 0;
+				if(value < 0) {
+					value =-value;
+					sign = 1;
+				}
+				uint8_t i = 0;
+				while(value > 0) {
+					str[i++] = value%10;
+					value /= 10;
+				}
+				if(sign) {
+					str[i++] = '-';
+				}
+
+				while(i--) {
 					int c;
-					if(str[i] == 0) {
-						break;
-					}
-					if(str[i] >= 0x30 && str[i] <= 0x39) {
-						c = str[i] - 0x30;
+					if(str[i] >= 0 && str[i] <= 9) {
+						c = str[i];
 					} else {
 						c = 10; // symbol of '-'
 					}
@@ -280,14 +296,14 @@ public:
 		, arr(arr)
 	{}
 
-	void draw()
+	void draw(uint8_t cursorOffset)
 	{
 		for(int i = 0; i < 128; ++i) {
-			drawColumn(i);
+			drawColumn(i, cursorOffset == i);
 		}
 	}
 
-	void drawColumn(uint8_t ind)
+	void drawColumn(uint8_t ind, uint8_t cursor)
 	{
 		constexpr uint8_t pages = 2;
 		uint8_t pb[pages];
@@ -321,7 +337,8 @@ public:
 
 			if(needDraw) {
 				for(int i = 0; i < pages; ++i) {
-					oled.drawPage(pb + i, 1 + i + r*pages, ind, 1);
+					uint8_t p = cursor ? ~pb[i] : pb[i];
+					oled.drawPage(&p, 1 + i + r*pages, ind, 1);
 				}
 			}
 		}
@@ -335,7 +352,9 @@ private:
 
 class IScreen {
 	public:
-		virtual void draw() = 0;
+		virtual void draw(int8_t force) = 0;
+		virtual void input(uint8_t code) = 0;
+		virtual uint8_t needRedraw() = 0;
 };
 
 class Mhz19Sensor {
@@ -372,18 +391,14 @@ private:
 		for(int i = 0; i < len; ++i) {
 			data[i] = uart_getchar();
 		}
-		/*
+		
 		if(calcCRC(data) == data[8]) {
-			//value <<= 8;
-			//value |= data[3];
-			return value/10;
-		} else {
-			return 0;
-		}*/
 			uint16_t h = data[2];
 			uint16_t l = data[3];
-			value = h*256 + l;
-		return value;
+			return h*256 + l;
+		} else {
+			return 0;
+		}
 	}
 	
 	uint8_t calcCRC(uint8_t * data)
@@ -398,15 +413,12 @@ private:
 
 		return crc;
 	}
-
-private:
-	uint16_t value = 13;
 };
-
 
 uint16_t co2Value = 0;
 int8_t temperature = 0;
 uint8_t humidity = 0;
+uint16_t voltage = 380;
 
 Mhz19Sensor co2;
 
@@ -418,19 +430,49 @@ class MainScreen
 			: pSmall(NumberPrinter(oled, 12, 4))
 			, pBig(NumberPrinter(oled, 12, 4))
 			, pLbl(NumberPrinter(oled, 7, 2))
-			, str0(NumberStr(pBig, pLbl, 0, 0, 64))
+			, str0(NumberStr(pBig, pLbl, 0, 0, 89))
 			, str1(NumberStr(pLbl, pLbl, 90, 0, 32))
 			, str2(NumberStr(pSmall, pLbl, 0, 4, 64))
 			, str3(NumberStr(pSmall, pLbl, 64, 4, 64))
 		{
 		}
 
-		void draw() override {
+		void draw(int8_t force) override {
+			if(force) {
+				co2Value_ = 0;
+				voltage_ = 0;
+				temperature_ = 0;
+				humidity_ = 0;
+			}
+			if(co2Value != co2Value_) {
+				co2Value_ = co2Value;
 				str0.setNumber(co2Value, 14);
-				str1.setNumber(1, 13);
-				str2.setNumber(temperature-50, 12);
+			}
+			if(voltage != voltage_) {
+				voltage_ = voltage;
+				str1.setNumber(voltage, 13);
+			}
+			if(temperature != temperature_) {
+				temperature_ = temperature;
+				str2.setNumber(temperature, 12);
+			}
+			if(humidity != humidity_) {
+				humidity_ = humidity;
 				str3.setNumber(humidity, 11);
-		};
+			}
+		}
+
+		uint8_t needRedraw() override
+		{
+			return redraw;
+		}
+
+		void input(uint8_t code) override 
+		{
+				voltage = code;
+				redraw = 1;
+		}
+
 	private:
 		NumberPrinter pSmall;
 		NumberPrinter pBig;
@@ -440,6 +482,11 @@ class MainScreen
 		NumberStr str1;
 		NumberStr str2;
 		NumberStr str3;
+		uint16_t co2Value_ = 0;
+		int8_t temperature_ = 0;
+		uint8_t humidity_ = 0;
+		uint16_t voltage_ = 0;
+		uint8_t redraw = 0;
 };
 
 class ChartScreen
@@ -449,20 +496,45 @@ public:
 	ChartScreen(SSD1306 & oled, DataArray & arr) 
 		: arr(arr)
 		,	pSmall(NumberPrinter(oled, 4, 1))
-		, str0(NumberStr(pSmall, pSmall, 0, 0, 32))
-		, str1(NumberStr(pSmall, pSmall, 32, 0, 32))
-		, str2(NumberStr(pSmall, pSmall, 64, 0, 32))
-		, str3(NumberStr(pSmall, pSmall, 96, 0, 32))
+		, str0(NumberStr(pSmall, pSmall, 0, 0, 36))
+		, str1(NumberStr(pSmall, pSmall, 36, 0, 32))
+		, str2(NumberStr(pSmall, pSmall, 68, 0, 32))
+		, str3(NumberStr(pSmall, pSmall, 100, 0, 28))
 		, chart(ChartWidget(oled, arr))
 	{
 	}
-	void draw() override {
-		str0.setNumber(arr.getLast(0, -1)*10, 14);
-		str1.setNumber(arr.getLast(1, -1), 12);
-		str2.setNumber(arr.getLast(2, -1), 11);
-		str3.setNumber(arr.getLast(0, -1), 13);
-		chart.draw();
-	};
+	
+	void draw(int8_t) override {
+		str0.setNumber(arr.getLast(0, cursorPosition%128-1)*10, 14);
+		str1.setNumber(arr.getLast(1, cursorPosition%128-1)-50, 12);
+		str2.setNumber(arr.getLast(2, cursorPosition%128-1), 11);
+		str3.setNumber(cursorPosition%128, 13);
+		chart.draw(cursorPosition%128);
+	}
+
+	void input(uint8_t code) override 
+	{
+		switch(code) {
+			case 1: // backward
+				cursorPosition--;
+				redraw = 1;
+				break;
+			case 2: // forward
+				cursorPosition++;
+				redraw = 1;
+				break;
+			default:
+				break;
+		}
+	}
+	
+	uint8_t needRedraw() override
+	{
+		uint8_t res = redraw;
+		redraw = 0;
+		return res;
+	}
+
 private:
 		DataArray & arr;
 		NumberPrinter pSmall;
@@ -471,6 +543,8 @@ private:
 		NumberStr str2;
 		NumberStr str3;
 		ChartWidget chart;
+		uint8_t cursorPosition = 127;
+		uint8_t redraw = 0;
 };
 
 DHT22 dht(&DDRD, &PORTD, &PIND, 5);
@@ -522,37 +596,81 @@ constexpr int PIN_DHT_PullUp = 6;
 constexpr int PIN_DHT_Data = 5;
 
 uint8_t screenIndex = 0;
+uint8_t needUpdateScreen = 1;
+uint8_t debaunce = 0;
+
+uint8_t checkDoInput()
+{
+	if(!debaunce) {
+		debaunce = 1;
+		TCNT0 = 0;
+		return 1;
+	}
+	return 0;
+}
+
+ISR(TIMER0_OVF_vect)
+{
+	debaunce = 0;
+}
 
 //Interrupt Service Routine for INT0
 // Button
 ISR(INT0_vect)
 {
-	/*
-	cmd = 1;
-	led.set();
-	led.clear();
-	*/
-	_delay_ms(5);
-	screenIndex++;
+	if(checkDoInput()) {
+		led.set();
+		screenIndex++;
+		needUpdateScreen = 1;
+		led.clear();
+	}
 }
 
 //Interrupt Service Routine for INT0
 // Encoder
 ISR(INT1_vect)
 {
-	/*
-	led.set();
-	if(PIND & (1 << PIN4)) {
-		//Left
-		cmd = 2;
-	} else {
-		//Right
-		cmd = 3;
+	if(checkDoInput()) {
+		led.set();
+		//_delay_ms(2);
+		if(PIND & (1 << PIN4)) {
+			//Left
+			screens[screenIndex % screenCnt]->input(1);
+		} else {
+			//Right
+			screens[screenIndex % screenCnt]->input(2);
+		}
+		led.clear();
 	}
-	_delay_ms(10);
-	led.clear();
-	*/
 }
+template <class T>
+class Filter {
+public:
+	void add(T val) 
+	{
+		buf[ind++] = val;
+		if(ind >= size) {
+			ind = 0;
+		}
+	}
+	T filtered() 
+	{
+		uint32_t tmp = 0;
+		for(int i = 0; i < size; ++i)
+		{
+			tmp += buf[i];
+		}
+		return tmp/size;
+	}
+private:
+	static constexpr uint8_t size = 10;
+	uint8_t ind = 0;
+	T buf[size];
+};
+
+Filter<uint16_t> co2Filter;
+Filter<int8_t> temperatureFilter;
+Filter<uint8_t> humidityFilter;
 
 int main(void)
 {
@@ -563,61 +681,91 @@ int main(void)
 
 	DDRD = (1 << PIN_MHZ_Enable) | (1 << PIN_DHT_PullUp);
 	// enable mhz and pullup for dht
+	PORTD = 0;
 	PORTD |= (1 << PIN_MHZ_Enable) | (1 << PIN_DHT_PullUp);
 	PORTD |= (1 << PIN2) | (1 << PIN3) | (1 << PIN4); // enable pullup on exint and encoder
-	//DDRD &= ~(1 << 2);
-	//PORTD |= (1 << 2);
 
 	// setup external interrupt
 	EICRA = (1 << ISC01) | (1 << ISC11); // Trigger on failing edge
 	EIMSK = (1 << INT0) | (1 << INT1);    // Enable INT0
+
+	// setup timer
+	TCCR0B = _BV(CS01) | _BV(CS00);
+	TIMSK0 = _BV(TOIE0);
+
  
 	led.clear();
-	sei();				//Enable Global Interrupt
 	
 	uart_init(0);
 	oled.init();
 	
+	sei();				//Enable Global Interrupt
+
+//uint16_t co2Value = 0;
+//int8_t temperature = 0;
+//uint8_t humidity = 0;
+
+
 	uint16_t logDelay = 0;
+	uint8_t updateDelay = 0;
+
+	uint8_t needLogData = 0;
+	uint8_t needUpdateValues = 1;
+	oled.clear();
 
 	while(1) {
-		
+		_delay_ms(100);
 
-		//if(cmd == 1) {
-		//	cmd = 0;
-	//	}
-	/*
-		asm volatile(
-			"nop\n\t"
-			"nop\n\t"
-			"nop\n\t"
-			"nop\n\t"
-			"nop\n\t"
-			"nop\n\t"
-		::);
-		*/
-
-		if(dht.readData() != -1) {
-			temperature = dht.gettemperatureC() + 50;
-			humidity = dht.gethumidity();
-		} else {
-			temperature = 0;
-			humidity = 0;
+		if(updateDelay++ > 10*6) {
+			updateDelay = 0;
+			needUpdateValues = 1;
+			needUpdateScreen = 1;
 		}
-		co2Value = co2.getValue();
 
-
-		logDelay++;
-		if(logDelay > 10*6)
-		{
+		if(logDelay++ > 10*60*6) { // 6 min
+//		if(logDelay++ > 10*6) {
 			logDelay = 0;
-			arr.addValue(co2Value/10, temperature-50, humidity);
-		}
-		oled.clear();
-		screens[screenIndex % screenCnt]->draw();
-		
-		_delay_ms(6100);
+			needLogData = 1;
+		} 
 
+		if(needUpdateValues) {
+			led.set();
+			needUpdateValues = 0;
+			if(dht.readData() != -1) {
+				temperature = dht.gettemperatureC();
+				humidity = dht.gethumidity();
+			} else {
+				temperature = 0;
+				humidity = 0;
+			}
+			co2Value = co2.getValue();
+			
+			co2Filter.add(co2Value/10);
+			humidityFilter.add(humidity);
+			temperatureFilter.add(temperature);
+
+			led.clear();
+		}
+	
+		if(needUpdateScreen || (screens[screenIndex % screenCnt]->needRedraw())) {
+			static uint8_t prevScreenIndex = 0;
+			static int8_t force = 0;
+			needUpdateScreen = 0;
+			led.set();
+			if(prevScreenIndex != screenIndex % screenCnt) {
+				oled.clear();
+				force = 1;
+				prevScreenIndex = screenIndex % screenCnt;
+			}
+			screens[screenIndex % screenCnt]->draw(force);
+			force = 0;
+			led.clear();
+		}
+
+		if(needLogData) {
+			needLogData = 0;
+			arr.addValue(co2Filter.filtered(), temperatureFilter.filtered()+50, humidityFilter.filtered());
+		}
 	}
 }
 

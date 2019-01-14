@@ -80,7 +80,7 @@ endif(NOT AVR_UPLOADTOOL_PORT)
 # default programmer (hardware)
 if(NOT AVR_PROGRAMMER)
    set(
-      AVR_PROGRAMMER avrispmkII
+      AVR_PROGRAMMER arduino
       CACHE STRING "Set default programmer hardware model: avrispmkII"
    )
 endif(NOT AVR_PROGRAMMER)
@@ -163,7 +163,8 @@ function(add_avr_executable EXECUTABLE_NAME)
       ${elf_file}
       PROPERTIES
          COMPILE_FLAGS "-mmcu=${AVR_MCU}"
-				 LINK_FLAGS "-mmcu=${AVR_MCU} -Wl,--gc-sections -Wl,-u,vfprintf -lprintf_min -mrelax -Wl,-Map,${map_file}"
+				 #LINK_FLAGS "-mmcu=${AVR_MCU} -Wl,--gc-sections -Wl,-u,vfprintf -lprintf_min -mrelax -Wl,-Map,${map_file}"
+				 LINK_FLAGS "-Os -mmcu=${AVR_MCU}"
    )
 
    add_custom_command(
@@ -208,7 +209,7 @@ function(add_avr_executable EXECUTABLE_NAME)
    add_custom_target(
       upload_${EXECUTABLE_NAME}
       ${AVR_UPLOADTOOL} -p ${AVR_MCU} -c ${AVR_PROGRAMMER} ${AVR_UPLOADTOOL_OPTIONS}
-         -U flash:w:${hex_file}
+         -U flash:w:${hex_file}:i
          -P ${AVR_UPLOADTOOL_PORT}
       DEPENDS ${hex_file}
       COMMENT "Uploading ${hex_file} to ${AVR_MCU} using ${AVR_PROGRAMMER}"

@@ -79,6 +79,7 @@ public:
 		void drawLineV(uint8_t x, uint8_t y, uint8_t len);
     void invert(uint8_t inverted);
 		void drawPage(uint8_t * buffer, int page, uint8_t x, uint8_t width);
+		void clearPage(int page, uint8_t x, uint8_t width);
 private:
     void sendCommand(uint8_t command);
     void sendData(uint8_t data);

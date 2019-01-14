@@ -278,3 +278,23 @@ void SSD1306::drawPage(uint8_t * buffer, int page, uint8_t x, uint8_t width)
 		i2c.stop();
 	}
 }
+
+void SSD1306::clearPage(int page, uint8_t x, uint8_t width)
+{
+  sendCommand(SSD1306_COLUMNADDR);
+  sendCommand(x);
+  sendCommand(0x7F);
+  
+	sendCommand(SSD1306_PAGEADDR);
+  sendCommand(page);
+	sendCommand(0x07);
+
+	for(uint8_t i = 0; i < width; ++i) {
+		
+		i2c.start();
+		i2c.write(0x40);
+		i2c.write(0);
+		i2c.stop();
+	}
+}
+

@@ -22,7 +22,7 @@ cmake_minimum_required(VERSION 2.8)
 set(AVR_UPLOADTOOL avrdude)
 set(AVR_PROGRAMMER arduino)
 set(AVR_UPLOADTOOL_PORT /dev/ttyUSB0)
-set(AVR_UPLOADTOOL_OPTIONS -b19200)
+set(AVR_UPLOADTOOL_OPTIONS -D -b19200 -C/usr/share/arduino/hardware/tools/avrdude.conf)
 
 ##########################################################################
 # AVR and fuses needs to be set
@@ -129,8 +129,12 @@ add_definitions("-pedantic-errors")
 #add_definitions("-funsigned-char")
 #add_definitions("-funsigned-bitfields")
 #add_definitions("-ffunction-sections")
-#add_definitions("-c")
+add_definitions("-c")
 add_definitions("-std=c++14")
+add_definitions("-fno-exceptions")
+add_definitions("-ffunction-sections")
+add_definitions("-fdata-sections")
+add_definitions("-MMD")
 
 ##########################################################################
 # include search paths
