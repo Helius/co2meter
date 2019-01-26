@@ -602,8 +602,9 @@ uint8_t debaunce = 0;
 uint8_t checkDoInput()
 {
 	if(!debaunce) {
-		debaunce = 1;
+		debaunce = 5;
 		TCNT0 = 0;
+		led.set();
 		return 1;
 	}
 	return 0;
@@ -611,18 +612,20 @@ uint8_t checkDoInput()
 
 ISR(TIMER0_OVF_vect)
 {
-	debaunce = 0;
+	if(debaunce) {
+		debaunce--;
+	} else {
+		led.clear();
+	}
 }
 
 //Interrupt Service Routine for INT0
 // Button
 ISR(INT0_vect)
 {
-	if(checkDoInput()) {
-		led.set();
+	if(!(PIND & (1 << PIN2)) && checkDoInput()) {
 		screenIndex++;
 		needUpdateScreen = 1;
-		led.clear();
 	}
 }
 
@@ -630,9 +633,7 @@ ISR(INT0_vect)
 // Encoder
 ISR(INT1_vect)
 {
-	if(checkDoInput()) {
-		led.set();
-		//_delay_ms(2);
+	if(!(PIND & (1<<PIN3)) && checkDoInput()) {
 		if(PIND & (1 << PIN4)) {
 			//Left
 			screens[screenIndex % screenCnt]->input(1);
@@ -640,7 +641,6 @@ ISR(INT1_vect)
 			//Right
 			screens[screenIndex % screenCnt]->input(2);
 		}
-		led.clear();
 	}
 }
 template <class T>
@@ -668,6 +668,7 @@ private:
 	T buf[size];
 };
 
+
 Filter<uint16_t> co2Filter;
 Filter<int8_t> temperatureFilter;
 Filter<uint8_t> humidityFilter;
@@ -690,7 +691,7 @@ int main(void)
 	EIMSK = (1 << INT0) | (1 << INT1);    // Enable INT0
 
 	// setup timer
-	TCCR0B = _BV(CS01) | _BV(CS00);
+	TCCR0B = _BV(CS01);// | _BV(CS00);
 	TIMSK0 = _BV(TOIE0);
 
  
@@ -700,11 +701,6 @@ int main(void)
 	oled.init();
 	
 	sei();				//Enable Global Interrupt
-
-//uint16_t co2Value = 0;
-//int8_t temperature = 0;
-//uint8_t humidity = 0;
-
 
 	uint16_t logDelay = 0;
 	uint8_t updateDelay = 0;
@@ -723,7 +719,7 @@ int main(void)
 		}
 
 		if(logDelay++ > 10*60*6) { // 6 min
-//		if(logDelay++ > 10*6) {
+//		if(logDelay++ > 10) {
 			logDelay = 0;
 			needLogData = 1;
 		} 
